@@ -5,7 +5,7 @@ PHP library for Nightscout data analysis (continuous glucose monitoring).
 ## Installation
 
 ```bash
-composer require hifolks/statistics guzzlehttp/guzzle
+composer install
 ```
 
 ## Basic Usage
@@ -14,13 +14,22 @@ composer require hifolks/statistics guzzlehttp/guzzle
 <?php
 
 require_once 'vendor/autoload.php';
-require_once 'Nightstats.php';
+
+use Nightstats\Nightstats;
+use GuzzleHttp\Exception\GuzzleException;
 
 $nightstats = new Nightstats('https://your-nightscout.fly.dev', 70, 180);
 
-$result = $nightstats->getStats(14, true);
-
-print_r($result);
+try {
+    $result = $nightstats->getStats(14, true);
+    print_r($result);
+} catch (GuzzleException $e) {
+    echo "Connection error: " . $e->getMessage() . "\n";
+} catch (RuntimeException $e) {
+    echo "API error: " . $e->getMessage() . "\n";
+} catch (InvalidArgumentException $e) {
+    echo "Data error: " . $e->getMessage() . "\n";
+}
 ```
 
 ## Constructor
@@ -49,66 +58,64 @@ Returns glucose statistics for the specified number of days.
 **Return:**
 ```php
 [
-    'start' => '2026-03-12',
+    'start' => '2026-03-11',
     'end' => '2026-03-25',
     'days' => 14,
     'glucose' => [
+        'values' => [231, 217, 235, ...],
         'stats' => [
-            'count' => 4032,
-            'mean' => 145.5,
-            'sd' => 32.1,
-            'cv' => 22.1,
-            'tir_percent' => 68.5,
-            'hypo_percent' => 2.3,
-            'hyper_percent' => 29.2
+            'count' => 317,
+            'mean' => 168.66,
+            'sd' => 72.71,
+            'cv' => 43.11,
+            'tir_percent' => 62.46,
+            'tbr_percent' => 1.58,
+            'tar_percent' => 35.96
         ],
         'agp' => [
-            0 => ['mean' => 140.2, 'p25' => 120.5, 'p50' => 135.0, 'p75' => 160.0],
-            6 => ['mean' => 130.1, 'p25' => 110.0, 'p50' => 125.0, 'p75' => 145.0],
-            // ...
+            0 => ['mean' => 88.3, 'p25' => 81.75, 'p50' => 87.5, 'p75' => 91, 'values' => [85, 87, 91, ...]],
+            6 => ['mean' => 207.75, 'p25' => 184.5, 'p50' => 206, 'p75' => 232.75, 'values' => [180, 205, 220, ...]],
+            8 => ['mean' => 357.25, 'p25' => 346.5, 'p50' => 359.5, 'p75' => 373.75, 'values' => [340, 355, 380, ...]],
+            // ... (24 hours)
         ]
     ],
     'treatments' => [
-        'values' => [1.5, 2.0, 1.0, ...],
+        'values' => [6, 16, 12, 12, 15, 7, 10, 12, 7, 6, 10, 16, 6, 7],
         'byDate' => [
-            '2026-03-12' => [1.5, 2.0],
-            '2026-03-13' => [1.0, 1.5, 2.0],
-            // ...
+            '2026-03-23' => [7],
+            '2026-03-24' => [7, 10, 12, 7, 6, 10, 16, 6],
+            '2026-03-25' => [6, 16, 12, 12, 15],
         ],
         'byHour' => [
-            0 => [1.5],
-            6 => [2.0, 1.0],
+            1 => [6],
+            2 => [15],
+            8 => [10, 16],
+            9 => [12, 12],
             // ...
         ]
     ]
 ]
 ```
 
-### fetchTreatmentsData()
-
-```php
-fetchTreatmentsData(int $days = 14): array
-```
-
-Fetches treatments data directly from the API.
-
-### extractTreatmentsData()
-
-```php
-extractTreatmentsData(array $data): array
-```
-
-Processes raw treatments data.
-
 ## Error Handling
 
 The class throws exceptions on errors:
+- `InvalidArgumentException` - Invalid constructor parameters (domain, glucose range) or insufficient data
 - `RuntimeException` - HTTP request error or API with no data
-- `InvalidArgumentException` - Insufficient data for analysis
 - `GuzzleException` - Connection error
+
+### Constructor Validation
+
+The constructor validates:
+- Domain must be a valid URL (e.g., `https://example.com`)
+- minGlucose must be greater than 0
+- maxGlucose must be greater than 0
+- minGlucose must be less than maxGlucose
+- maxGlucose must be less than or equal to 600 mg/dL
 
 ## Result Structure
 
-- **glucose.stats**: General statistics (mean, standard deviation, CV, TIR, hypo/hyper)
-- **glucose.agp**: Ambulatory Glucose Profile by hour (mean, P25, P50, P75)
+- **glucose.values**: Array of raw glucose readings
+- **glucose.stats**: General statistics (mean, standard deviation, CV, TIR, TBR, TAR)
+- **glucose.agp**: Ambulatory Glucose Profile by hour (mean, P25, P50, P75, values)
 - **treatments**: Insulin data grouped by date and hour

@@ -1,0 +1,14 @@
+{
+    "name": "madeinnordeste/nightstats",
+    "description": "PHP lib to get Nightscout data stats",
+    "type": "library",
+    "autoload": {
+        "psr-4": {
+            "Nightstats\\": "src/"
+        }
+    },
+    "require": {
+        "guzzlehttp/guzzle": "^7.10",
+        "hi-folks/statistics": "^1.5"
+    }
+}

@@ -1,6 +1,6 @@
 <?php
 
-require_once 'vendor/autoload.php';
+namespace Nightstats;
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\GuzzleException;
@@ -16,11 +16,45 @@ class Nightstats
 
     public function __construct(string $domain, int $minGlucose = 70, int $maxGlucose = 180)
     {
+        $domain = rtrim($domain, '/');
+        $this->validateDomain($domain);
+        $this->validateGlucoseRange($minGlucose, $maxGlucose);
+
         $this->httpClient = new Client();
         $this->sgvUrl = $domain . '/api/v1/entries/sgv.json';
         $this->treatmentsUrl = $domain . '/api/v1/treatments.json';
         $this->minGlucose = $minGlucose;
         $this->maxGlucose = $maxGlucose;
+    }
+
+    private function validateDomain(string $domain): void
+    {
+        if (empty(trim($domain))) {
+            throw new \InvalidArgumentException("Domain cannot be empty");
+        }
+
+        if (!filter_var($domain, FILTER_VALIDATE_URL)) {
+            throw new \InvalidArgumentException("Invalid domain format. Must be a valid URL (e.g., https://example.com)");
+        }
+    }
+
+    private function validateGlucoseRange(int $minGlucose, int $maxGlucose): void
+    {
+        if ($minGlucose <= 0) {
+            throw new \InvalidArgumentException("minGlucose must be greater than 0");
+        }
+
+        if ($maxGlucose <= 0) {
+            throw new \InvalidArgumentException("maxGlucose must be greater than 0");
+        }
+
+        if ($minGlucose >= $maxGlucose) {
+            throw new \InvalidArgumentException("minGlucose must be less than maxGlucose");
+        }
+
+        if ($maxGlucose > 600) {
+            throw new \InvalidArgumentException("maxGlucose must be less than or equal to 600 mg/dL");
+        }
     }
 
     public function getStats(int $days = 14, bool $includeTreatments = false): array
@@ -37,6 +71,7 @@ class Nightstats
             'end' => $end->format('Y-m-d'),
             'days' => $days,
             'glucose' => [
+                'values' => $glucoseExtracted['values'],
                 'stats' => $stats,
                 'agp' => $agp,
             ]
@@ -69,7 +104,7 @@ class Nightstats
 
     private function getDateRange(int $days): array
     {
-        $end = (new DateTime())->modify("-1 days");
+        $end = (new \DateTime())->modify("-1 days");
         $start = (clone $end)->modify("-{$days} days");
         return [$start, $end];
     }
@@ -82,16 +117,17 @@ class Nightstats
             $data = json_decode($body, true);
 
             if ($response->getStatusCode() !== 200) {
-                throw new RuntimeException("Erro ao buscar dados da API: HTTP " . $response->getStatusCode());
+                throw new \RuntimeException("Error fetching API data: HTTP " . $response->getStatusCode());
             }
 
             if (empty($data)) {
-                throw new RuntimeException("Sem dados retornados pela API");
+                throw new \RuntimeException("No data returned from API");
             }
 
             return $data;
-        } catch (GuzzleException $e) {
-            throw new RuntimeException("Erro na requisição HTTP: " . $e->getMessage(), 0, $e);
+        }
+        catch (GuzzleException $e) {
+            throw new \RuntimeException("HTTP request error: " . $e->getMessage(), 0, $e);
         }
     }
 
@@ -122,7 +158,7 @@ class Nightstats
     private function calculateStatistics(array $values): array
     {
         if (empty($values)) {
-            throw new InvalidArgumentException("Sem dados suficientes para análise");
+            throw new \InvalidArgumentException("Insufficient data for analysis");
         }
 
         $stat = Statistics::make($values);
@@ -132,8 +168,8 @@ class Nightstats
         $cv = $stat->coefficientOfVariation() ?? ($sd / $mean) * 100;
 
         $tir = count(array_filter($values, fn($v) => $v >= $this->minGlucose && $v <= $this->maxGlucose));
-        $hypo = count(array_filter($values, fn($v) => $v < $this->minGlucose));
-        $hyper = count(array_filter($values, fn($v) => $v > $this->maxGlucose));
+        $tbr = count(array_filter($values, fn($v) => $v < $this->minGlucose));
+        $tar = count(array_filter($values, fn($v) => $v > $this->maxGlucose));
 
         return [
             'count' => $count,
@@ -141,8 +177,8 @@ class Nightstats
             'sd' => round($sd, 2),
             'cv' => round($cv, 2),
             'tir_percent' => round(($tir / $count) * 100, 2),
-            'hypo_percent' => round(($hypo / $count) * 100, 2),
-            'hyper_percent' => round(($hyper / $count) * 100, 2),
+            'tbr_percent' => round(($tbr / $count) * 100, 2),
+            'tar_percent' => round(($tar / $count) * 100, 2),
         ];
     }
 
@@ -163,6 +199,7 @@ class Nightstats
                 'p25' => $stat->firstQuartile(),
                 'p50' => $stat->median(),
                 'p75' => $stat->thirdQuartile(),
+                'values' => $values
             ];
         }
 
@@ -171,7 +208,7 @@ class Nightstats
         return $agp;
     }
 
-    public function fetchTreatmentsData(int $days = 14): array
+    private function fetchTreatmentsData(int $days = 14): array
     {
         [$start, $end] = $this->getDateRange($days);
 
@@ -182,7 +219,7 @@ class Nightstats
         return $this->fetchData($url);
     }
 
-    public function extractTreatmentsData(array $data): array
+    private function extractTreatmentsData(array $data): array
     {
         $insulinValues = [];
         $insulinByDate = [];
