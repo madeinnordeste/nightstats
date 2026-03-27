@@ -2,11 +2,19 @@
 
 PHP library for Nightscout data analysis (continuous glucose monitoring).
 
-## Installation
+## Install
 
 ```bash
 composer install
 ```
+
+## Tests
+
+```bash
+php vendor/phpunit/phpunit/phpunit --configuration phpunit.xml
+```
+
+
 
 ## Basic Usage
 
